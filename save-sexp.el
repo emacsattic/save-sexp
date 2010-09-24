@@ -35,7 +35,7 @@
 ;; A variable's value can be saved like this:
 ;;
 ;;   (save-sexp-save 'some-variable "/some/file.el"
-;;                    'save-sexp-save-setq-1 'pp-to-string)
+;;                   'save-sexp-save-setq-1 'pp-to-string)
 
 ;; But since this is the usecase for which this library was created a
 ;; shortcut exists (which is also an interactive command):
@@ -46,9 +46,9 @@
 ;; gets you started:
 ;;
 ;;   (save-sexp-save 'some-variable "/some/file.el"
-;;                    (lambda (var pp)
-;;                      (save-sexp-default-save 'defvar var pp 2))
-;;                    'pp-to-string)
+;;                   (lambda (var pp)
+;;                     (save-sexp-default-save 'defvar var pp 2))
+;;                   'pp-to-string)
 
 ;;; Code:
 
@@ -98,6 +98,7 @@ function `save-sexp-indent' can be used for this purpose."
       (let ((inhibit-read-only t))
 	(funcall save variable pp))
       (let ((file-precious-flag t))
+	;; TODO allow skipping this using global variable
 	(save-buffer))
       (if old-buffer
 	  (progn
@@ -110,37 +111,44 @@ function `save-sexp-indent' can be used for this purpose."
 The value of VARIABLE is pretty-printed using function PP or if is is
 non-nil."
   (save-sexp-save variable file
-		   (lambda (var pp)
-		     (save-sexp-default-save 'setq var pp 5))
-		   pp))
+		  (lambda (var pp)
+		    (save-sexp-default-save 'setq var pp 5))
+		  pp))
 
 (defun save-sexp-default-save (setter variable &optional pp indent)
   "Insert into the current buffer a form which sets VARIABLE.
 The inserted S-expression begins with SETTER, followed by unquoted
 VARIABLE, and the value of VARIABLE which is pretty-printed using
 function PP if it is non-nil `pp-to-string'."
-  (save-excursion
-    (save-sexp-delete
-     (lambda (sexp)
-       (and (eq (nth 0 sexp) setter)
-	    (eq (nth 1 sexp) variable))))
-    (let ((standard-output (current-buffer))
-	  (value (symbol-value variable)))
-      ;; Kludge.  Can this be done more gracefully?
-      (when (memq (type-of value) '(symbol cons))
-	(setq value (list 'quote value)))
-      (unless (bolp)
-	(princ "\n"))
-      (princ (format "(%s %s" setter variable))
-      (cond (pp (princ "\n")
-		(princ (save-sexp-pp-indent (funcall pp value) 6)))
-	    (t  (princ " ")
-		(prin1 value)))
-      (when (looking-back "\n")
-	(delete-char -1))
-      (princ ")")
-      (unless (looking-at "\n")
-	(princ "\n")))))
+  (save-sexp-save-helper setter variable
+    (princ (format "(%s %s" setter variable))
+    (cond (pp (princ "\n")
+	      (princ (save-sexp-pp-indent (funcall pp value) 6))) ; FIXME use indent?
+	  (t  (princ " ")
+	      (prin1 value)))
+    (when (looking-back "\n")
+      (delete-char -1))
+    (princ ")")))
+
+(defmacro save-sexp-save-helper (setter variable &rest body)
+  "Insert into the current buffer a form which sets VARIABLE.
+..."
+  (declare (indent 2) (debug t))
+  `(save-excursion
+     (save-sexp-delete
+      (lambda (sexp)
+	(and (eq (nth 0 sexp) ,setter)
+	     (eq (nth 1 sexp) ,variable))))
+     (let ((standard-output (current-buffer))
+	   (value (symbol-value ,variable)))
+       ;; Kludge.  Can this be done more gracefully?
+       (when (memq (type-of value) '(symbol cons))
+	 (setq value (list 'quote value)))
+       (unless (bolp)
+	 (princ "\n"))
+       ,@body
+       (unless (looking-at "\n")
+	 (princ "\n")))))
 
 (defun save-sexp-delete (predicate)
   "Remove all S-expressions matching PREDICATE from the current buffer."
