@@ -1,13 +1,11 @@
 ;;; save-sexp.el --- replace S-expressions in files to save variables
 
-;; Copyright (C) 2010  Jonas Bernoulli
-;; Copyright (C) 1996, 1997, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-;;   2006, 2007, 2008, 2009, 2010  Free Software Foundation, Inc.
+;; Copyright (C) 2010-2011  Jonas Bernoulli
+;; Copyright (C) 1996-1997, 1999-2010  Free Software Foundation, Inc.
 
 ;; Author: Jonas Bernoulli <jonas@bernoul.li>
 ;; Created: 20100902
-;; Updated: 20100902
-;; Version: 0.1
+;; Version: 0.1.1
 ;; Homepage: https://github.com/tarsius/save-sexp
 ;; Keywords: convenience
 
