@@ -1,6 +1,6 @@
 ;;; save-sexp.el --- replace S-expressions in files to save variables
 
-;; Copyright (C) 2010-2011  Jonas Bernoulli
+;; Copyright (C) 2010-2012  Jonas Bernoulli
 ;; Copyright (C) 1996-1997, 1999-2010  Free Software Foundation, Inc.
 
 ;; Author: Jonas Bernoulli <jonas@bernoul.li>
@@ -54,7 +54,7 @@
   "Save the current value of VARIABLE in FILE using a `setq' form.
 The value of VARIABLE is pretty-printed using function `pp-to-string'."
   (interactive (list (read-variable "Save variable: ")
-		     (read-file-name "in file: ")))
+                     (read-file-name "in file: ")))
   (save-sexp-save variable file 'save-sexp-save-setq-1 'pp-to-string))
 
 (defun save-sexp-save (variable file save &optional pp)
@@ -74,44 +74,44 @@ SAVE.  Also note that the the string returned by function PP should be
 additionally indended by SAVE before being inserted into the buffer;
 function `save-sexp-indent' can be used for this purpose."
   (let* ((recentf-exclude
-	  (if recentf-mode
-	      (cons (concat "\\`"
-			    (regexp-quote
-			     (recentf-expand-file-name custom-file))
-			    "\\'")
-		    recentf-exclude)))
-	 (old-buffer (find-buffer-visiting file))
-	 old-buffer-name)
+          (if recentf-mode
+              (cons (concat "\\`"
+                            (regexp-quote
+                             (recentf-expand-file-name custom-file))
+                            "\\'")
+                    recentf-exclude)))
+         (old-buffer (find-buffer-visiting file))
+         old-buffer-name)
     (with-current-buffer (let ((find-file-visit-truename t))
-			   (or old-buffer (find-file-noselect file)))
+                           (or old-buffer (find-file-noselect file)))
       ;; We'll save using file-precious-flag, so avoid destroying
       ;; symlinks.  (If we're not already visiting the buffer, this is
       ;; handled by find-file-visit-truename, above.)
       (when old-buffer
-	(setq old-buffer-name (buffer-file-name))
-	(set-visited-file-name (file-chase-links file)))
+        (setq old-buffer-name (buffer-file-name))
+        (set-visited-file-name (file-chase-links file)))
 
       (unless (eq major-mode 'emacs-lisp-mode)
-	(emacs-lisp-mode))
+        (emacs-lisp-mode))
       (let ((inhibit-read-only t))
-	(funcall save variable pp))
+        (funcall save variable pp))
       (let ((file-precious-flag t))
-	;; TODO allow skipping this using global variable
-	(save-buffer))
+        ;; TODO allow skipping this using global variable
+        (save-buffer))
       (if old-buffer
-	  (progn
-	    (set-visited-file-name old-buffer-name)
-	    (set-buffer-modified-p nil))
-	(kill-buffer (current-buffer))))))
+          (progn
+            (set-visited-file-name old-buffer-name)
+            (set-buffer-modified-p nil))
+        (kill-buffer (current-buffer))))))
 
 (defun save-sexp-save-setq-1 (variable &optional pp)
   "Insert into the current buffer a `setq' form which sets VARIABLE.
 The value of VARIABLE is pretty-printed using function PP or if is is
 non-nil."
   (save-sexp-save variable file
-		  (lambda (var pp)
-		    (save-sexp-default-save 'setq var pp 5))
-		  pp))
+                  (lambda (var pp)
+                    (save-sexp-default-save 'setq var pp 5))
+                  pp))
 
 (defun save-sexp-default-save (setter variable &optional pp indent)
   "Insert into the current buffer a form which sets VARIABLE.
@@ -121,32 +121,31 @@ function PP if it is non-nil `pp-to-string'."
   (save-sexp-save-helper setter variable
     (princ (format "(%s %s" setter variable))
     (cond (pp (princ "\n")
-	      (princ (save-sexp-pp-indent (funcall pp value) 6))) ; FIXME use indent?
-	  (t  (princ " ")
-	      (prin1 value)))
+              (princ (save-sexp-pp-indent (funcall pp value) 6))) ; FIXME use indent?
+          (t  (princ " ")
+              (prin1 value)))
     (when (looking-back "\n")
       (delete-char -1))
     (princ ")")))
 
 (defmacro save-sexp-save-helper (setter variable &rest body)
-  "Insert into the current buffer a form which sets VARIABLE.
-..."
+  "Insert into the current buffer a form which sets VARIABLE."
   (declare (indent 2) (debug t))
   `(save-excursion
      (save-sexp-delete
       (lambda (sexp)
-	(and (eq (nth 0 sexp) ,setter)
-	     (eq (nth 1 sexp) ,variable))))
+        (and (eq (nth 0 sexp) ,setter)
+             (eq (nth 1 sexp) ,variable))))
      (let ((standard-output (current-buffer))
-	   (value (symbol-value ,variable)))
+           (value (symbol-value ,variable)))
        ;; Kludge.  Can this be done more gracefully?
        (when (memq (type-of value) '(symbol cons))
-	 (setq value (list 'quote value)))
+         (setq value (list 'quote value)))
        (unless (bolp)
-	 (princ "\n"))
+         (princ "\n"))
        ,@body
        (unless (looking-at "\n")
-	 (princ "\n")))))
+         (princ "\n")))))
 
 (defun save-sexp-delete (predicate)
   "Remove all S-expressions matching PREDICATE from the current buffer."
@@ -158,30 +157,33 @@ function PP if it is non-nil `pp-to-string'."
   (let (first)
     (catch 'found
       (while t ;; We exit this loop only via throw.
-	;; Skip all whitespace and comments.
-	(while (forward-comment 1))
-	(let ((start (point))
-	      (sexp (condition-case nil
-			(read (current-buffer))
-		      (end-of-file (throw 'found nil)))))
-	  (when (and (listp sexp)
-		     (funcall predicate sexp))
-	    (delete-region start (point))
-	    (unless first
-	      (setq first (point)))))))
+        ;; Skip all whitespace and comments.
+        (while (forward-comment 1))
+        (let ((start (point))
+              (sexp (condition-case nil
+                        (read (current-buffer))
+                      (end-of-file (throw 'found nil)))))
+          (when (and (listp sexp)
+                     (funcall predicate sexp))
+            (delete-region start (point))
+            (unless first
+              (setq first (point)))))))
     (if first
-	(goto-char first)
+        (goto-char first)
       ;; Move in front of local variables, otherwise long
       ;; S-expressions would make them ineffective.
       (let ((pos (point-max))
-	    (case-fold-search t))
-	(save-excursion
-	  (goto-char (point-max))
-	  (search-backward "\n\^L" (max (- (point-max) 3000) (point-min))
-			   'move)
-	  (when (search-forward "Local Variables:" nil t)
-	    (setq pos (line-beginning-position))))
-	(goto-char pos)))))
+            (case-fold-search t))
+        (save-excursion
+          (goto-char (point-max))
+          (search-backward "\n\^L" (max (- (point-max) 3000) (point-min))
+                           'move)
+          ;; The `concat' works around a bug in Emacs.  Otherwise the
+          ;; 'Local Variables' section would not be found by the code
+          ;; responsible for setting the local variables.
+          (when (search-forward (concat "Local" " Variables:") nil t)
+            (setq pos (line-beginning-position))))
+        (goto-char pos)))))
 
 (defun save-sexp-pp-indent (string indent)
   (replace-regexp-in-string
@@ -190,11 +192,14 @@ function PP if it is non-nil `pp-to-string'."
      (save-match-data
        (string-match "\\(\t+\\)?\\(\s+\\)?" str)
        (let ((len (+ (* 8 (length (match-string 1 str)))
-		     (length (match-string 2 str))
-		     indent)))
-	 (concat (make-string (/ len 8) ?\t)
-		 (make-string (% len 8) ?\s)))))
+                     (length (match-string 2 str))
+                     indent)))
+         (concat (make-string (/ len 8) ?\t)
+                 (make-string (% len 8) ?\s)))))
    string nil nil 1))
 
 (provide 'save-sexp)
+;; Local Variables:
+;; indent-tabs-mode: nil
+;; End:
 ;;; save-sexp.el ends here
