@@ -179,14 +179,8 @@ just before those."
       (let ((pos (point-max))
             (case-fold-search t))
         (save-excursion
-          (goto-char (point-max))
-          (search-backward "\n\^L" (max (- (point-max) 3000) (point-min))
-                           'move)
-          ;; The `concat' works around a bug in Emacs.  Otherwise the
-          ;; 'Local Variables' section would not be found by the code
-          ;; responsible for setting the local variables.
-          ;; FIXME that ^ seems unlikely
-          (when (search-forward (concat "Local" " Variables:") nil t)
+	  (goto-char (point-min))
+          (when (re-search-forward "^;+[\s\t]*Local Variables:" nil t)
             (setq pos (line-beginning-position))))
         (goto-char pos)))))
 
