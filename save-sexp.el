@@ -117,35 +117,29 @@ non-nil."
   "Insert into the current buffer a form which sets VARIABLE.
 The inserted S-expression begins with SETTER, followed by unquoted
 VARIABLE, and the value of VARIABLE which is pretty-printed using
-function PP if it is non-nil `pp-to-string'."
-  (save-sexp-save-helper setter variable
-    (princ (format "(%s %s" setter variable))
-    (cond (pp (princ "\n")
-              (princ (save-sexp-pp-indent (funcall pp value) 6))) ; FIXME use indent?
-          (t  (princ " ")
-              (prin1 value)))
-    (when (looking-back "\n")
-      (delete-char -1))
-    (princ ")")))
-
-(defmacro save-sexp-save-helper (setter variable &rest body)
-  "Insert into the current buffer a form which sets VARIABLE."
-  (declare (indent 2) (debug t))
-  `(save-excursion
-     (save-sexp-delete
-      (lambda (sexp)
-        (and (eq (nth 0 sexp) ,setter)
-             (eq (nth 1 sexp) ,variable))))
-     (let ((standard-output (current-buffer))
-           (value (symbol-value ,variable)))
-       ;; Kludge.  Can this be done more gracefully?
-       (when (memq (type-of value) '(symbol cons))
-         (setq value (list 'quote value)))
-       (unless (bolp)
-         (princ "\n"))
-       ,@body
-       (unless (looking-at "\n")
-         (princ "\n")))))
+function PP if it is non-nil."
+  (save-excursion
+    (save-sexp-delete
+     (lambda (sexp)
+       (and (eq (nth 0 sexp) setter)
+            (eq (nth 1 sexp) variable))))
+    (let ((standard-output (current-buffer))
+          (value (symbol-value variable)))
+      ;; Kludge.  Can this be done more gracefully?
+      (when (memq (type-of value) '(symbol cons))
+        (setq value (list 'quote value)))
+      (unless (bolp)
+        (princ "\n"))
+      (princ (format "(%s %s" setter variable))
+      (cond (pp (princ "\n")
+                (princ (save-sexp-pp-indent (funcall pp value) 6)))
+            (t  (princ " ")
+                (prin1 value)))
+      (when (looking-back "\n")
+        (delete-char -1))
+      (princ ")\n"))
+    (unless (looking-at "\n")
+      (princ "\n"))))
 
 (defun save-sexp-delete (predicate)
   "Remove matching S-expressions from the current buffer.
