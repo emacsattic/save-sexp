@@ -148,12 +148,18 @@ function PP if it is non-nil `pp-to-string'."
          (princ "\n")))))
 
 (defun save-sexp-delete (predicate)
-  "Remove all S-expressions matching PREDICATE from the current buffer."
+  "Remove matching S-expressions from the current buffer.
+Remove all top-level S-expressions from the current buffer for
+which PREDICATE returns non-nil and move point to where the first
+match was removed.  If nothing matches move point to the end of
+the buffer or if there exist definitions of file local variables
+just before those."
   (goto-char (point-min))
   ;; Skip all whitespace and comments.
   (while (forward-comment 1))
-  (or (eobp)
-      (save-excursion (forward-sexp (buffer-size)))) ; Test for scan errors.
+  (unless (eobp)
+    ;; Test for scan errors.
+    (save-excursion (forward-sexp (buffer-size))))
   (let (first)
     (catch 'found
       (while t ;; We exit this loop only via throw.
@@ -181,6 +187,7 @@ function PP if it is non-nil `pp-to-string'."
           ;; The `concat' works around a bug in Emacs.  Otherwise the
           ;; 'Local Variables' section would not be found by the code
           ;; responsible for setting the local variables.
+          ;; FIXME that ^ seems unlikely
           (when (search-forward (concat "Local" " Variables:") nil t)
             (setq pos (line-beginning-position))))
         (goto-char pos)))))
