@@ -106,8 +106,8 @@ function `save-sexp-indent' can be used for this purpose."
 
 (defun save-sexp-save-setq-1 (variable &optional pp)
   "Insert into the current buffer a `setq' form which sets VARIABLE.
-The value of VARIABLE is pretty-printed using function PP or if is is
-non-nil."
+If optional PP is non-nil it is used to pretty-printed VARIABLE's
+value."
   (save-sexp-save variable file
                   (lambda (var pp)
                     (save-sexp-default-save 'setq var pp 5))
