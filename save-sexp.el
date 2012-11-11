@@ -38,7 +38,7 @@
 ;; But since this is the usecase for which this library was created a
 ;; shortcut exists (which is also an interactive command):
 ;;
-;;   (save-sexp-save-setq 'some-variable "/some/file.el")
+;;   (save-sexp-save-setq "/some/file.el" 'some-variable)
 
 ;; If on the other hand you want to use another form than `setq' this
 ;; gets you started:
@@ -50,7 +50,7 @@
 
 ;;; Code:
 
-(defun save-sexp-save-setq (variable file)
+(defun save-sexp-save-setq (file variable)
   "Save the current value of VARIABLE in FILE using a `setq' form.
 The value of VARIABLE is pretty-printed using function `pp-to-string'."
   (interactive (list (read-variable "Save variable: ")
