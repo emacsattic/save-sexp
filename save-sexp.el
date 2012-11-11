@@ -186,16 +186,22 @@ function PP if it is non-nil `pp-to-string'."
         (goto-char pos)))))
 
 (defun save-sexp-pp-indent (string indent)
+  "Indent multi-line string STRING INDENT columns.
+Each non-empty line is intended by indented by INDENT columns.
+If `indent-tabs-mode' is nil use only spaces otherwise use spaces
+and tab according to `tab-width'."
   (replace-regexp-in-string
    "^\\([\s\t]+\\|\\)[^\n]"
    (lambda (str)
      (save-match-data
        (string-match "\\(\t+\\)?\\(\s+\\)?" str)
-       (let ((len (+ (* 8 (length (match-string 1 str)))
+       (let ((len (+ (* tab-width (length (match-string 1 str)))
                      (length (match-string 2 str))
                      indent)))
-         (concat (make-string (/ len 8) ?\t)
-                 (make-string (% len 8) ?\s)))))
+         (if indent-tabs-mode
+             (concat (make-string (/ len tab-width) ?\t)
+                     (make-string (% len tab-width) ?\s))
+           (make-string len ?\s)))))
    string nil nil 1))
 
 (provide 'save-sexp)
