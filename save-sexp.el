@@ -26,9 +26,10 @@
 
 ;;; Commentary:
 
-;; Support for replacing S-expressions in files to save variables similar
-;; to how easy Customize does it.  In fact most of the code is taken from
-;; `cus-edit.el' and is just generalized a bit for use outside Customize.
+;; Support for replacing S-expressions in files to save variables
+;; similar to how easy Customize does it.  In fact most of the code
+;; is taken from `cus-edit.el' and is just generalized a bit for use
+;; outside Customize.
 
 ;; A variable's value can be saved like this:
 ;;
@@ -40,12 +41,12 @@
 ;;
 ;;   (save-sexp-save-setq "/some/file.el" 'some-variable)
 
-;; If on the other hand you want to use another form than `setq' this
-;; gets you started:
+;; If on the other hand you want to use another form this gets you
+;; started:
 ;;
 ;;   (save-sexp-save "/some/file.el"
 ;;                   (lambda (var pp)
-;;                     (save-sexp-default-save 'defvar var pp 2))
+;;                     (save-sexp-default-save 'defcustom var pp 2))
 ;;                   'some-variable 'pp-to-string)
 
 ;;; Code:
