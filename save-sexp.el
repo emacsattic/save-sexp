@@ -32,8 +32,8 @@
 
 ;; A variable's value can be saved like this:
 ;;
-;;   (save-sexp-save 'some-variable "/some/file.el"
-;;                   'save-sexp-save-setq-1 'pp-to-string)
+;;   (save-sexp-save "/some/file.el" 'save-sexp-save-setq-1
+;;                   'some-variable 'pp-to-string)
 
 ;; But since this is the usecase for which this library was created a
 ;; shortcut exists (which is also an interactive command):
@@ -43,10 +43,10 @@
 ;; If on the other hand you want to use another form than `setq' this
 ;; gets you started:
 ;;
-;;   (save-sexp-save 'some-variable "/some/file.el"
+;;   (save-sexp-save "/some/file.el"
 ;;                   (lambda (var pp)
 ;;                     (save-sexp-default-save 'defvar var pp 2))
-;;                   'pp-to-string)
+;;                   'some-variable 'pp-to-string)
 
 ;;; Code:
 
@@ -55,24 +55,27 @@
 The value of VARIABLE is pretty-printed using function `pp-to-string'."
   (interactive (list (read-variable "Save variable: ")
                      (read-file-name "in file: ")))
-  (save-sexp-save variable file 'save-sexp-save-setq-1 'pp-to-string))
+  (save-sexp-save file 'save-sexp-save-setq-1 variable 'pp-to-string))
 
-(defun save-sexp-save (variable file save &optional pp)
-  "Save the value of VARIABLE in FILE using SAVE.
+(defun save-sexp-save (file save &rest args)
+  "Save something specified by ARGS in FILE using SAVE.
 
-This function prepares a buffer to edit FILE and then calls function SAVE
-with VARIABLE and PP as arguments.  SAVE should remove existing forms
-which set the value or VARIABLE (using `save-sexp-delete') and then insert
-a new form that (re)sets VARIABLE to it's current value when it is later
-evaluated.
+This function only prepares a buffer to edit FILE and then calls
+function SAVE with ARGS arguments.  That function is responsible
+for actually saving the thing specified by ARGS after removing
+existing forms which set the same thing.
 
-Argument PP is optional here but the SAVE function has to accept it as
-the second argument, though it may ignore it.
+Function `save-sexp-delete' can be used in SAVE to remove
+existing forms.
 
-See function `save-sexp-save-setq' for a function that can be used as
-SAVE.  Also note that the the string returned by function PP should be
-additionally indended by SAVE before being inserted into the buffer;
-function `save-sexp-indent' can be used for this purpose."
+Function `save-sexp-indent' can be used in SAVE to indent the
+value part of the inserted value.
+
+In many cases instead of using the above functions in SAVE
+`save-sexp-default-save' can be used.
+
+See function `save-sexp-save-setq-1' for a function that uses
+`save-sexp-default-save' and can be used as SAVE."
   (let* ((recentf-exclude
           (if recentf-mode
               (cons (concat "\\`"
@@ -94,7 +97,7 @@ function `save-sexp-indent' can be used for this purpose."
       (unless (eq major-mode 'emacs-lisp-mode)
         (emacs-lisp-mode))
       (let ((inhibit-read-only t))
-        (funcall save variable pp))
+        (apply save args))
       (let ((file-precious-flag t))
         ;; TODO allow skipping this using global variable
         (save-buffer))
@@ -108,10 +111,10 @@ function `save-sexp-indent' can be used for this purpose."
   "Insert into the current buffer a `setq' form which sets VARIABLE.
 If optional PP is non-nil it is used to pretty-printed VARIABLE's
 value."
-  (save-sexp-save variable file
+  (save-sexp-save file
                   (lambda (var pp)
                     (save-sexp-default-save 'setq var pp 5))
-                  pp))
+                  variable pp))
 
 (defun save-sexp-default-save (setter variable &optional pp indent)
   "Insert into the current buffer a form which sets VARIABLE.
