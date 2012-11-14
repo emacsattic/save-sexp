@@ -132,7 +132,8 @@ function PP if it is non-nil."
       ;; Kludge.  Can this be done more gracefully?
       (when (memq (type-of value) '(symbol cons))
         (setq value (list 'quote value)))
-      (unless (bolp)
+      (when (and (not (looking-back "\n\n"))
+		 (not (= (point) 1)))
         (princ "\n"))
       (princ (format "(%s %s" setter variable))
       (cond (pp (princ "\n")
@@ -141,9 +142,9 @@ function PP if it is non-nil."
                 (prin1 value)))
       (when (looking-back "\n")
         (delete-char -1))
-      (princ ")\n"))
-    (unless (looking-at "\n")
-      (princ "\n"))))
+      (princ ")\n")
+      (unless (looking-at "\n")
+	(princ "\n")))))
 
 (defun save-sexp-delete (predicate)
   "Remove matching S-expressions from the current buffer.
