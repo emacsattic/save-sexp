@@ -169,7 +169,7 @@ just before those."
                       (end-of-file (throw 'found nil)))))
           (when (and (listp sexp)
                      (funcall predicate sexp))
-            (delete-region start (point))
+            (delete-region start (1+ (point)))
             (unless first
               (setq first (point)))))))
     (if first
