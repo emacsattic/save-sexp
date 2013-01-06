@@ -1,11 +1,10 @@
-;;; save-sexp.el --- replace S-expressions in files to save variables
+;;; save-sexp.el --- save variables in files using setter forms like `setq'
 
-;; Copyright (C) 2010-2012  Jonas Bernoulli
-;; Copyright (C) 1996-1997, 1999-2010  Free Software Foundation, Inc.
+;; Copyright (C) 2010-2013  Jonas Bernoulli
 
 ;; Author: Jonas Bernoulli <jonas@bernoul.li>
 ;; Created: 20100902
-;; Version: 0.1.1
+;; Version: 0.2.0
 ;; Homepage: https://github.com/tarsius/save-sexp
 ;; Keywords: convenience
 
@@ -26,183 +25,339 @@
 
 ;;; Commentary:
 
-;; Support for replacing S-expressions in files to save variables
-;; similar to how easy Customize does it.  In fact most of the code
-;; is taken from `cus-edit.el' and is just generalized a bit for use
-;; outside Customize.
+;; Persistently save the value of variables by replacing the textual
+;; representations of the setter S-expression (e.g. `setq') used to
+;; set it's value in some file.
 
-;; A variable's value can be saved like this:
-;;
-;;   (save-sexp-save "/some/file.el" 'save-sexp-save-setq-1
-;;                   'some-variable 'pp-to-string)
+;; This is similar to how Custom saves options and faces; but instead
+;; of using exactly one instance of `custom-set-variables' to set the
+;; values of all customized variables, this package saves each
+;; variable separatly using an instance of some form that sets the
+;; value of a variable, like e.g. `setq', `defvar' or `defconst'.
 
-;; But since this is the usecase for which this library was created a
-;; shortcut exists (which is also an interactive command):
-;;
-;;   (save-sexp-save-setq "/some/file.el" 'some-variable)
+;;   (save-sexp-save-setq "~/file.el" 'variable)
 
-;; If on the other hand you want to use another form this gets you
-;; started:
-;;
-;;   (save-sexp-save "/some/file.el"
-;;                   (lambda (var pp)
-;;                     (save-sexp-default-save 'defcustom var pp 2))
-;;                   'some-variable 'pp-to-string)
+;; This removes all top-level (setq variable ...) forms and inserts a
+;; new `setq' form where the first match was removed, setting VARIABLE
+;; to it's current value.
+
+;; `save-sexp-save' can be used to replace any setter of the form:
+
+;;   (SETTER '?VARIABLE VALUE [DOC-STRING])
+
+;; See `save-sexp-save's doc-string for how ways to control
+;; intentation etc. `save-sexp-save-setq' and similar functions can
+;; also be used interactively.
+
+;;; Todo:
+
+;; - write more tests
+;; - also remove different forms setting the same variable
 
 ;;; Code:
 
-(defun save-sexp-save-setq (file variable)
-  "Save the current value of VARIABLE in FILE using a `setq' form.
-The value of VARIABLE is pretty-printed using function `pp-to-string'."
-  (interactive (list (read-variable "Save variable: ")
-                     (read-file-name "in file: ")))
-  (save-sexp-save file 'save-sexp-save-setq-1 variable 'pp-to-string))
+(require 'cl-lib)
+(require 'find-func)
 
-(defun save-sexp-save (file save &rest args)
-  "Save something specified by ARGS in FILE using SAVE.
+(defvar recentf-exclude)
+(declare-function recentf-expand-file-name "recentf" (name))
 
-This function only prepares a buffer to edit FILE and then calls
-function SAVE with ARGS arguments.  That function is responsible
-for actually saving the thing specified by ARGS after removing
-existing forms which set the same thing.
+(defconst save-sexp-use-current-value
+  (make-symbol "save-sexp-use-current-value"))
 
-Function `save-sexp-delete' can be used in SAVE to remove
-existing forms.
+(cl-defun save-sexp-save-setq
+  (file-or-buffer variable
+                  &optional wrap printer (value nil svalue))
+  "Save the value of VARIABLE using a `setq' form.
+Insert the `setq' form into FILE-OR-BUFFER.  If FILE-OR-BUFFER
+is a file name then also save the file; otherwise it has to be a
+buffer, nil for the current buffer.
 
-Function `save-sexp-indent' can be used in SAVE to indent the
-value part of the inserted value.
+With a prefix argument prompt for the value to save, otherwise
+save the current value.
 
-In many cases instead of using the above functions in SAVE
-`save-sexp-default-save' can be used.
+See `save-sexp-save' for details on the optional arguments."
+  (interactive (save-sexp-read-args))
+  (save-sexp-save file-or-buffer 'setq variable nil
+                  wrap printer nil
+                  (if svalue value save-sexp-use-current-value)))
 
-See function `save-sexp-save-setq-1' for a function that uses
-`save-sexp-default-save' and can be used as SAVE."
-  (let* ((recentf-exclude
-          (if recentf-mode
-              (cons (concat "\\`"
-                            (regexp-quote
-                             (recentf-expand-file-name custom-file))
-                            "\\'")
-                    recentf-exclude)))
-         (old-buffer (find-buffer-visiting file))
-         old-buffer-name)
-    (with-current-buffer (let ((find-file-visit-truename t))
-                           (or old-buffer (find-file-noselect file)))
-      ;; We'll save using file-precious-flag, so avoid destroying
-      ;; symlinks.  (If we're not already visiting the buffer, this is
-      ;; handled by find-file-visit-truename, above.)
-      (when old-buffer
-        (setq old-buffer-name (buffer-file-name))
-        (set-visited-file-name (file-chase-links file)))
+(cl-defun save-sexp-save-defvar
+  (file-or-buffer variable
+                  &optional wrap printer doc-string (value nil svalue))
+  "Save the value of VARIABLE using a `defvar' form.
+Insert the `defvar' form into FILE-OR-BUFFER.  If FILE-OR-BUFFER
+is a file name then also save the file; otherwise it has to be a
+buffer, nil for the current buffer.
 
-      (unless (eq major-mode 'emacs-lisp-mode)
-        (emacs-lisp-mode))
-      (let ((inhibit-read-only t))
-        (apply save args))
-      (let ((file-precious-flag t))
-        ;; TODO allow skipping this using global variable
-        (save-buffer))
-      (if old-buffer
-          (progn
-            (set-visited-file-name old-buffer-name)
-            (set-buffer-modified-p nil))
-        (kill-buffer (current-buffer))))))
+With a prefix argument prompt for the value to save, otherwise
+save the current value.  Interactivley always save the doc-string.
 
-(defun save-sexp-save-setq-1 (variable &optional pp)
-  "Insert into the current buffer a `setq' form which sets VARIABLE.
-If optional PP is non-nil it is used to pretty-printed VARIABLE's
-value."
-  (save-sexp-save file
-                  (lambda (var pp)
-                    (save-sexp-default-save 'setq var pp 5))
-                  variable pp))
+See `save-sexp-save' for details on the optional arguments."
+  (interactive (save-sexp-read-args t))
+  (save-sexp-save file-or-buffer 'defvar variable nil
+                  wrap printer
+                  (or doc-string (called-interactively-p 'any))
+                  (if svalue value save-sexp-use-current-value)))
 
-(defun save-sexp-default-save (setter variable &optional pp indent)
-  "Insert into the current buffer a form which sets VARIABLE.
-The inserted S-expression begins with SETTER, followed by unquoted
-VARIABLE, and the value of VARIABLE which is pretty-printed using
-function PP if it is non-nil."
-  (save-excursion
-    (save-sexp-delete
-     (lambda (sexp)
-       (and (eq (nth 0 sexp) setter)
-            (eq (nth 1 sexp) variable))))
-    (let ((standard-output (current-buffer))
-          (value (symbol-value variable)))
-      ;; Kludge.  Can this be done more gracefully?
-      (when (memq (type-of value) '(symbol cons))
-        (setq value (list 'quote value)))
-      (when (and (not (looking-back "\n\n"))
-		 (not (= (point) 1)))
+(cl-defun save-sexp-save-defconst
+  (file-or-buffer variable
+                  &optional wrap printer doc-string (value nil svalue))
+  "Save the value of VARIABLE using a `defconst' form.
+Insert the `defconst' form into FILE-OR-BUFFER.  If FILE-OR-BUFFER
+is a file name then also save the file; otherwise it has to be a
+buffer, nil for the current buffer.
+
+With a prefix argument prompt for the value to save, otherwise
+save the current value.  Interactivley always save the doc-string.
+
+See `save-sexp-save' for details on the optional arguments."
+  (interactive (save-sexp-read-args t))
+  (save-sexp-save file-or-buffer 'defconst variable nil
+                  wrap printer
+                  (or doc-string (called-interactively-p 'any))
+                  (if svalue value save-sexp-use-current-value)))
+
+(defun save-sexp-read-args (&optional use-default)
+  (let* ((var (save-sexp-read-variable))
+         f fob val)
+    (when (and use-default
+               (setq f (symbol-file var 'defvar))
+               (string-match "\\.el\\(c\\)\\'" f))
+      (setq f (find-library-name (substring f 0 (match-beginning 1)))))
+    (setq fob (read-file-name "in file (empty for current buffer): "
+                              (and f (file-name-directory f))
+                              nil nil
+                              (and f (file-name-nondirectory f))))
+    (setq val save-sexp-use-current-value)
+    (when (or current-prefix-arg (not (boundp var)))
+      (setq val (read-from-minibuffer "using value: " nil nil t)))
+    (list (if (eq fob "") nil fob) var val)))
+
+(defun save-sexp-read-variable ()
+  (let* ((enable-recursive-minibuffers t)
+         (v (variable-at-point))
+         (var (completing-read
+               (if (symbolp v)
+                   (format "Save variable (default %s): " v)
+                 "Save variable: ")
+               obarray
+               (lambda (vv)
+                 (or (get vv 'variable-documentation)
+                     (and (boundp vv) (not (keywordp vv)))))
+               t nil nil
+               (if (symbolp v) (symbol-name v)))))
+    (if (equal var "")
+        (error "No variable selected")
+      (intern var))))
+
+(defmacro save-sexp-with-buffer (buffer &rest body)
+  (declare (indent 1))
+  (let ((old-mode (make-symbol "old-mode")))
+    `(with-current-buffer
+         (or ,buffer (current-buffer))
+       (let ((standard-output (current-buffer))
+             (inhibit-read-only t)
+             ,old-mode)
+         (unless (derived-mode-p 'emacs-lisp-mode)
+           (setq ,old-mode major-mode)
+           (emacs-lisp-mode))
+         (prog1 (progn ,@body)
+           (when ,old-mode
+             (funcall ,old-mode)))))))
+
+(defmacro save-sexp-with-file-or-buffer (file-or-buffer &rest body)
+  (declare (indent 1))
+  (let ((old-buffer (make-symbol "old-buffer"))
+        (old-buffer-name (make-symbol "old-buffer-name"))
+        (fob (make-symbol "file-or-buffer")))
+    `(let ((,fob ,file-or-buffer))
+       (if (or (not ,fob) (bufferp ,fob))
+           (save-sexp-with-buffer ,fob
+             ,@body)
+         (let* ((recentf-exclude
+                 (if recentf-mode
+                     (cons (concat "\\`"
+                                   (regexp-quote
+                                    (recentf-expand-file-name ,fob))
+                                   "\\'")
+                           recentf-exclude)))
+                (,old-buffer (find-buffer-visiting ,fob))
+                ,old-buffer-name)
+           (make-directory (file-name-directory ,fob) t)
+           (save-sexp-with-buffer
+               (let ((find-file-visit-truename t))
+                 (or ,old-buffer (find-file-noselect ,fob)))
+             (when ,old-buffer
+               (setq ,old-buffer-name (buffer-file-name))
+               (set-visited-file-name (file-chase-links ,fob)))
+             (prog1 (progn ,@body)
+               (let ((file-precious-flag t))
+                 (save-buffer))
+               (if ,old-buffer
+                   (progn
+                     (set-visited-file-name ,old-buffer-name)
+                     (set-buffer-modified-p nil))
+                 (kill-buffer (current-buffer))))))))))
+
+(cl-defun save-sexp-save
+  (file-or-buffer setter variable
+                  &optional quote wrap printer doc-string
+                  (value nil svalue))
+  "Save the value of VARIABLE using a SETTER form.
+Insert the SETTER form into FILE-OR-BUFFER.  If FILE-OR-BUFFER
+is a file name then also save the file; otherwise it has to be a
+buffer, nil for the current buffer.
+
+The VARIABLE's value is quoted as needed and pretty-printed using
+optional PRINTER or `pp-to-string' if that is nil.  If optional
+QUOTE is non-nil a quote is inserted and expected before VARIABLE.
+
+If optional WRAP is nil insert the value on a new line if and
+only if the string contains at least one newline or if the
+current line would become longer than `fill-column' when
+inserting the string there.  If WRAP is t unconditionally insert
+the string on a new line.  For any other non-nil value
+unconditionally insert on the current line.
+
+If optional VALUE is provided use that as VARIABLE's value;
+otherwise it's current value.  If optional DOC-STRING is a string
+insert that after the value; otherwise if it is nil don't insert
+a doc-string; or if it is t insert it's current doc-string."
+  (save-sexp-with-file-or-buffer file-or-buffer
+    (save-sexp-prepare setter quote variable)
+    (save-sexp-insert-value
+     printer wrap
+     (if (and svalue (not (eq value save-sexp-use-current-value)))
+         value
+       (symbol-value variable)))
+    (when (eq doc-string t)
+      (setq doc-string (documentation-property
+                        variable 'variable-documentation t)))
+    (when doc-string
+      (princ "\n")
+      (lisp-indent-line)
+      (prin1 doc-string))))
+
+(defun save-sexp-prepare (setter quote variable)
+  "Prepare to set VARIABLE using SETTER.
+Remove all matching S-expressions using `save-sexp-delete' from
+the current buffer.  Then insert \"(SETTER VARIABLE)\" where the
+first match was found.
+
+When QUOTE is non-nil insert a quote before VARIABLE.  Point is
+before the closing paren when this function returns.  The caller
+should then insert VARIABLE's value and possibly it's doc-string
+there."
+  (let ((rep (save-sexp-delete
+              (apply-partially 'save-sexp-search setter quote variable)))
+        pos)
+    (or (bobp)
+        (and rep (not (car rep)))
         (princ "\n"))
-      (princ (format "(%s %s" setter variable))
-      (cond (pp (princ "\n")
-                (princ (save-sexp-pp-indent (funcall pp value) 6)))
-            (t  (princ " ")
-                (prin1 value)))
-      (when (looking-back "\n")
-        (delete-char -1))
-      (princ ")\n")
-      (unless (looking-at "\n")
-	(princ "\n")))))
+    (princ (format "(%s %s%s" setter (if quote "'" "") variable))
+    (setq pos (point))
+    (princ ")\n")
+    (or (eobp)
+        (looking-at "\n")
+        (and rep (not (cdr rep)))
+        (insert "\n"))
+    (goto-char pos)))
 
-(defun save-sexp-delete (predicate)
+(defun save-sexp-search (setter quote variable)
+  "Goto the next matching S-expression.
+Find the next sexp of the form (SETTER VARIABLE ...) in the
+current buffer, put point at position at the sexp's end and
+return the position at it's the beginning.  If no matching
+sexp is found don't touch point and return nil."
+  (catch 'found
+    (while t
+      (while (forward-comment 1))
+      (let ((beg (point))
+            (sexp (condition-case nil
+                      (read (current-buffer))
+                    (end-of-file (throw 'found nil)))))
+        (when (and (listp sexp)
+                   (eq (car sexp) setter)
+                   (eq (if quote (cadr (cadr sexp)) (cadr sexp)) variable))
+          (forward-char)
+          (throw 'found beg))))))
+
+(defun save-sexp-delete (locator)
   "Remove matching S-expressions from the current buffer.
-Remove all top-level S-expressions from the current buffer for
-which PREDICATE returns non-nil and move point to where the first
-match was removed.  If nothing matches move point to the end of
-the buffer or if there exist definitions of file local variables
-just before those."
+Remove all top-level sexps for which function LOCATOR returns
+non-nil from the current buffer and move point to the end of the
+first match.
+
+If no match is found move point near the end of the buffer.  More
+precisely if the buffer ends with a commend and/or a `provide'
+form move before that, otherwise the very end of the buffer."
   (goto-char (point-min))
-  ;; Skip all whitespace and comments.
-  (while (forward-comment 1))
   (unless (eobp)
-    ;; Test for scan errors.
     (save-excursion (forward-sexp (buffer-size))))
-  (let (first)
-    (catch 'found
-      (while t ;; We exit this loop only via throw.
-        ;; Skip all whitespace and comments.
-        (while (forward-comment 1))
-        (let ((start (point))
-              (sexp (condition-case nil
-                        (read (current-buffer))
-                      (end-of-file (throw 'found nil)))))
-          (when (and (listp sexp)
-                     (funcall predicate sexp))
-            (delete-region start (1+ (point)))
-            (unless first
-              (setq first (point)))))))
+  (let (first ret before after beg)
+    (while (setq beg (funcall locator))
+      (setq before (save-excursion (goto-char beg)
+                                   (looking-back "\n\n"))
+            after  (looking-at "\n"))
+      (when (and before (not first))
+        (cl-decf beg))
+      (when (and after (or before (not first)))
+        (forward-char))
+      (delete-region beg (point))
+      (unless first
+        (setq first (point) ret (cons before after))))
     (if first
         (goto-char first)
-      ;; Move in front of local variables, otherwise long
-      ;; S-expressions would make them ineffective.
-      (let ((pos (point-max))
-            (case-fold-search t))
-        (save-excursion
-	  (goto-char (point-min))
-          (when (re-search-forward "^;+[\s\t]*Local Variables:" nil t)
-            (setq pos (line-beginning-position))))
-        (goto-char pos)))))
+      (goto-char (point-max))
+      (or (bolp) (insert "\n"))
+      (let ((pos (point)))
+        (while (forward-comment -1)
+          (or (bobp) (backward-char))
+          (setq pos (point)))
+        (goto-char pos)
+        (when (save-excursion
+                (backward-sexp)
+                (eq (ignore-errors (car-safe (read (current-buffer))))
+                    'provide))
+          (backward-sexp)
+          (or (bobp) (backward-char)))))
+    ret))
 
-(defun save-sexp-pp-indent (string indent)
-  "Indent multi-line string STRING INDENT columns.
-Each non-empty line is intended by indented by INDENT columns.
-If `indent-tabs-mode' is nil use only spaces otherwise use spaces
-and tab according to `tab-width'."
-  (replace-regexp-in-string
-   "^\\([\s\t]+\\|\\)[^\n]"
-   (lambda (str)
-     (save-match-data
-       (string-match "\\(\t+\\)?\\(\s+\\)?" str)
-       (let ((len (+ (* tab-width (length (match-string 1 str)))
-                     (length (match-string 2 str))
-                     indent)))
-         (if indent-tabs-mode
-             (concat (make-string (/ len tab-width) ?\t)
-                     (make-string (% len tab-width) ?\s))
-           (make-string len ?\s)))))
-   string nil nil 1))
+(defun save-sexp-insert-value (printer wrap object)
+  "Insert the pretty-printed representation of OBJECT using PRINTER.
+Function PRINTER is called with OBJECT as only argument and has
+to return it's pretty-printed representation as a string, which
+is then inserted into the current buffer.
+
+If WRAP is nil insert the string on a new line if and only if the
+string contains at least one newline or if the current line would
+become longer than `fill-column' when inserting the string there.
+If WRAP is t unconditionally insert the string on a new line.
+For any other non-nil value unconditionally insert on the current
+line.
+
+Finally indent the inserted text."
+  (let ((string (funcall (or printer 'pp-to-string) object)))
+    (when (string-match "[ \t\n\r]+\\'" string)
+      (setq string (replace-match "" t t string)))
+    (if (or (eq wrap t)
+            (and (not wrap)
+                 (or (string-match "\n" string)
+                     (> (- (point) (line-beginning-position))
+                        fill-column))))
+        (insert "\n")
+      (insert " "))
+    (or (keywordp object)
+        (booleanp object)
+        (and (not (symbolp object))
+             (not (listp object)))
+        (insert "'"))
+    (insert string)
+    (let ((beg (scan-sexps (point) -1)))
+      (indent-region beg (point))
+      (whitespace-cleanup-region beg (point))
+      (save-excursion (goto-char beg) (read (current-buffer))))))
 
 (provide 'save-sexp)
 ;; Local Variables:
