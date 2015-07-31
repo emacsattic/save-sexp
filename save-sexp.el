@@ -298,7 +298,7 @@ form move before that, otherwise the very end of the buffer."
   (let (first ret before after beg)
     (while (setq beg (funcall locator))
       (setq before (save-excursion (goto-char beg)
-                                   (looking-back "\n\n"))
+                                   (looking-back "\n\n" nil))
             after  (looking-at "\n"))
       (when (and before (not first))
         (cl-decf beg))
